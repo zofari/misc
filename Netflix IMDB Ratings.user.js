@@ -6,7 +6,6 @@
 // @match        https://www.netflix.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @grant        GM_getResourceText
 // @grant        GM_getResourceURL
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -23,22 +22,28 @@
     "use strict";
 
     GM_addStyle(`
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 100;
+            }
+        }
         .imdb-rating {
-            display: -webkit-inline-box;
-            display: -webkit-inline-flex;
-            display: -moz-inline-box;
             display: -ms-inline-flexbox;
             display: inline-flex;
-            -webkit-flex-wrap: nowrap;
-                -ms-flex-wrap: nowrap;
-                    flex-wrap: nowrap;
+
             -webkit-box-align: center;
             -webkit-align-items: center;
             -moz-box-align: center;
-                -ms-flex-align: center;
-                    align-items: center;
+            -ms-flex-align: center;
+            align-items: center;
+
             color: white;
             padding: 8px 0;
+            animation-name: fade-in;
+            animation-duration: 2s;
         }
 
         .imdb-image {
@@ -46,19 +51,11 @@
             height: 20px;
             margin: 3px;
         }
-
-        .imdb-error,
-        .imdb-loading,
-        .imdb-score,
-        .imdb-votes,
-        .imdb-no-rating {
-            margin: 0 3px;
-        }
     `);
 
     let cache = {
 
-        __nextweek: function() {
+        _nextweek: function() {
             let now = new Date();
             let day7 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
             return day7.getTime();
@@ -68,7 +65,7 @@
             let key = "imdb " + title;
             let val = {
                 "rating": rating,
-                "expire": this.__nextweek()
+                "expire": this._nextweek()
             };
 
             GM_setValue(key, val);
@@ -100,40 +97,46 @@
 
     let imdb = {
 
-        __titleQueryUrl: function(title) {
+        _titleQueryUrl: function(title) {
             const apiKey = "314377c9";
             return "https://www.omdbapi.com/?apikey=" + apiKey + "&t=" + encodeURI(title);
         },
 
-        getRating: function(title, cb) {
-            let url = this.__titleQueryUrl(title);
+        getRating: function(title, callback) {
+            let url = this._titleQueryUrl(title);
 
             GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
 
                 onload: function(res) {
-                    console.log("Called " + url + " status: " + res.status);
 
                     if (res.status != 200) {
-                        return cb("Error " + res.status);
+                        console.error(url + " failed with status " + res.status);
+                        return;
                     }
 
                     try {
                         var resObj = JSON.parse(res.response);
                     } catch (e) {
-                        return cb("Error parsing");
+                        console.error("Error parsing response: " + res.response);
+                        return;
                     }
 
-                    if (!resObj.imdbRating) {
-                        return cb("Error not found");
+                    if (!resObj.imdbRating || !resObj.imdbVotes) {
+                        console.error("Missing IMDB rating or vote count: " + res.response);
+                        return;
                     }
 
-                    cb(null, {score: resObj.imdbRating, votes: resObj.imdbVotes, url: url})
+                    if (resObj.imdbRating === "N/A" || resObj.imdbVotes === "N/A") {
+                        console.error("Invalid IMDB rating or vote count: " + res.response);
+                    }
+
+                    callback({score: resObj.imdbRating, votes: resObj.imdbVotes, url: url})
                 },
 
                 onerror: function() {
-                    cb("Error Internal");
+                    console.error("Error from onerror for fetching " + url);
                 }
             });
         }
@@ -145,48 +148,16 @@
     class RatingFetcher {
 
         constructor(title) {
-            this.__initNode();
-            this.__fetchRating(title);
+            this._initNode();
+            this._fetchRating(title);
         }
 
-        __initNode() {
+        _initNode() {
             this.node = document.createElement("div");
-
             this.node.classList.add("imdb-rating");
-            this.node.style.cursor = "default";
-
-            let img = document.createElement("img");
-            img.classList.add("imdb-image");
-            img.src = imdbLogo;
-
-            this.node.appendChild(img);
-            this.node.appendChild(document.createElement("div"));
         }
 
-        __setDiv(msg, style) {
-            let span = document.createElement("span");
-            span.classList.add(style);
-            span.appendChild(document.createTextNode(msg));
-
-            let div = document.createElement("div");
-            div.appendChild(span);
-
-            this.node.replaceChild(div, this.node.querySelector("div"));
-        }
-
-        __setErrorDiv(msg) {
-            this.__setDiv(msg, "imdb-error");
-        }
-
-        __setLoadingDiv(msg) {
-            this.__setDiv(msg, "imdb-loading");
-        }
-
-        __setRatingDiv(rating) {
-            if (!rating || !rating.score || !rating.votes || !rating.url) {
-                this.__setDiv("N/A", "imdb-no-rating");
-                return;
-            }
+        _setRatingDiv(rating) {
 
             let score = document.createElement("span");
             score.classList.add("imdb-score");
@@ -200,31 +171,30 @@
             div.appendChild(score);
             div.appendChild(votes);
 
-            div.addEventListener('click', function() {
+            let img = document.createElement("img");
+            img.classList.add("imdb-image");
+            img.src = imdbLogo;
+
+            this.node.appendChild(img);
+            this.node.appendChild(div);
+
+            this.node.addEventListener('click', function() {
                 GM_openInTab(rating.url, { active: true, insert: true, setParent: true });
             });
-            div.style.cursor = "pointer";
-
-            this.node.replaceChild(div, this.node.querySelector("div"));
         }
 
-        __fetchRating(title) {
-            this.__setLoadingDiv("Loading...");
+        _fetchRating(title) {
 
             let rating = cache.get(title);
             if (rating) {
-                this.__setRatingDiv(rating);
+                this._setRatingDiv(rating);
                 return;
             }
 
             // Need to use arrow notation to allow binding of `this` to RatingFetcher.
-            imdb.getRating(title, (err, rating) => {
-                if (err) {
-                    this.__setErrorDiv(err);
-                } else {
-                    cache.set(title, rating);
-                    this.__setRatingDiv(rating);
-                }
+            imdb.getRating(title, (rating) => {
+                cache.set(title, rating);
+                this._setRatingDiv(rating);
             });
         }
 
@@ -238,10 +208,10 @@
             this.node = node;
         }
 
-        // child classes to fill in __getTitle(), __getParentNode(), __getSiblingNode()
+        // child classes to fill in _getTitle(), _getParentNode()
 
         renderImdbRating() {
-            let title = this.__getTitle();
+            let title = this._getTitle();
 
             console.log("Extracting title " + title);
 
@@ -250,52 +220,40 @@
             }
 
             let ratingFetcher = new RatingFetcher(title);
-            this.__getParentNode().insertBefore(ratingFetcher.getFormattedNode(), this.__getSiblingNode());
+            this._getParentNode().appendChild(ratingFetcher.getFormattedNode());
         }
     }
 
     class RegularCardPreviewRenderer extends RatingRenderer {
-        __getTitle() {
+        _getTitle() {
             let imgNode = this.node.querySelector(".previewModal--boxart");
             return imgNode && imgNode.getAttribute("alt");
         }
 
-        __getParentNode() {
+        _getParentNode() {
             return this.node.querySelector(".previewModal--metadatAndControls-container");
-        }
-
-        __getSiblingNode() {
-            return this.node.querySelector(".previewModal--metadatAndControls-tags-container");
         }
     }
 
     class TallCardPreviewRenderer extends RatingRenderer {
-        __getTitle() {
+        _getTitle() {
             let titleNode = this.node.querySelector(".bob-title");
             return titleNode && titleNode.innerHTML;
         }
 
-        __getParentNode() {
+        _getParentNode() {
             return this.node.querySelector(".bob-overview");
-        }
-
-        __getSiblingNode() {
-            return this.node.querySelector(".bob-overview-evidence-wrapper");
         }
     }
 
     class BillboardRenderer extends RatingRenderer {
-        __getTitle() {
+        _getTitle() {
             let imgNode = this.node.querySelector(".title-logo");
             return imgNode && imgNode.getAttribute("alt");
         }
 
-        __getParentNode() {
+        _getParentNode() {
             return this.node.querySelector(".logo-and-text");
-        }
-
-        __getSiblingNode() {
-            return this.node.querySelector(".billboard-links");
         }
     }
 
