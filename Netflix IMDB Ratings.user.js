@@ -30,25 +30,25 @@
                 opacity: 100;
             }
         }
-        .imdb-rating {
+        .imdb-container {
             display: -ms-inline-flexbox;
             display: inline-flex;
-
-            -webkit-box-align: center;
             -webkit-align-items: center;
-            -moz-box-align: center;
-            -ms-flex-align: center;
             align-items: center;
 
             color: white;
-            padding: 8px 0;
-            animation-name: fade-in;
-            animation-duration: 2s;
-        }
+            height: 23px;
 
+            animation-name: fade-in;
+            animation-duration: 1.5s;
+        }
         .imdb-image {
             width: 20px;
             height: 20px;
+            margin: 0 3px 0 0;
+        }
+        .imdb-score,
+        .imdb-votes {
             margin: 3px;
         }
     `);
@@ -61,8 +61,12 @@
             return day7.getTime();
         },
 
+        _key: function(title) {
+            return "imdb " + title;
+        },
+
         set: function(title, rating) {
-            let key = "imdb " + title;
+            let key = this._key(title);
             let val = {
                 "rating": rating,
                 "expire": this._nextweek()
@@ -72,7 +76,7 @@
         },
 
         get: function(title) {
-            let key = "imdb " + title;
+            let key = this._key(title);
             let val = GM_getValue(key);
 
             return val && val.rating;
@@ -117,22 +121,23 @@
                     }
 
                     try {
-                        var resObj = JSON.parse(res.response);
+                        var response = JSON.parse(res.response);
                     } catch (e) {
                         console.error("Error parsing response: " + res.response);
                         return;
                     }
 
-                    if (!resObj.imdbRating || !resObj.imdbVotes) {
+                    if (!response.imdbRating || !response.imdbVotes) {
                         console.error("Missing IMDB rating or vote count: " + res.response);
                         return;
                     }
 
-                    if (resObj.imdbRating === "N/A" || resObj.imdbVotes === "N/A") {
+                    if (response.imdbRating === "N/A" || response.imdbVotes === "N/A") {
                         console.error("Invalid IMDB rating or vote count: " + res.response);
+                        return;
                     }
 
-                    callback({score: resObj.imdbRating, votes: resObj.imdbVotes, url: url})
+                    callback({score: response.imdbRating, votes: response.imdbVotes, url: url})
                 },
 
                 onerror: function() {
@@ -148,58 +153,53 @@
     class RatingFetcher {
 
         constructor(title) {
-            this._initNode();
-            this._fetchRating(title);
+            this.title = title;
         }
 
-        _initNode() {
-            this.node = document.createElement("div");
-            this.node.classList.add("imdb-rating");
-        }
+        _setRatingNode(rating) {
 
-        _setRatingDiv(rating) {
+            let iconNode = document.createElement("img");
+            iconNode.classList.add("imdb-image");
+            iconNode.src = imdbLogo;
 
-            let score = document.createElement("span");
-            score.classList.add("imdb-score");
-            score.appendChild(document.createTextNode(rating.score));
+            let scoreNode = document.createElement("span");
+            scoreNode.classList.add("imdb-score");
+            scoreNode.appendChild(document.createTextNode(rating.score));
 
-            let votes = document.createElement("span");
-            votes.classList.add("imdb-votes");
-            votes.appendChild(document.createTextNode("(" + rating.votes + " votes)"));
+            let voteNode = document.createElement("span");
+            voteNode.classList.add("imdb-votes");
+            voteNode.appendChild(document.createTextNode("(" + rating.votes + " votes)"));
 
-            let div = document.createElement("div");
-            div.appendChild(score);
-            div.appendChild(votes);
+            this._node.appendChild(iconNode);
+            this._node.appendChild(scoreNode);
+            this._node.appendChild(voteNode);
 
-            let img = document.createElement("img");
-            img.classList.add("imdb-image");
-            img.src = imdbLogo;
-
-            this.node.appendChild(img);
-            this.node.appendChild(div);
-
-            this.node.addEventListener('click', function() {
+            this._node.addEventListener('click', function() {
                 GM_openInTab(rating.url, { active: true, insert: true, setParent: true });
             });
+
+            this._node.classList.add("imdb-container");
         }
 
-        _fetchRating(title) {
+        _fetchAndSetRatingNode() {
 
-            let rating = cache.get(title);
+            let rating = cache.get(this.title);
             if (rating) {
-                this._setRatingDiv(rating);
+                this._setRatingNode(rating);
                 return;
             }
 
             // Need to use arrow notation to allow binding of `this` to RatingFetcher.
-            imdb.getRating(title, (rating) => {
-                cache.set(title, rating);
-                this._setRatingDiv(rating);
+            imdb.getRating(this.title, (rating) => {
+                cache.set(this.title, rating);
+                this._setRatingNode(rating);
             });
         }
 
-        getFormattedNode() {
-            return this.node;
+        get node() {
+            this._node = document.createElement("div");
+            this._fetchAndSetRatingNode();
+            return this._node;
         }
     }
 
@@ -220,7 +220,7 @@
             }
 
             let ratingFetcher = new RatingFetcher(title);
-            this._getParentNode().appendChild(ratingFetcher.getFormattedNode());
+            this._getParentNode().appendChild(ratingFetcher.node);
         }
     }
 
