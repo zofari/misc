@@ -13,7 +13,6 @@
 // @grant        GM_listValues
 // @grant        GM_openInTab
 // @connect      omdbapi.com
-// @resource     imdbIcon   https://ia.media-imdb.com/images/M/MV5BMTczNjM0NDY0Ml5BMl5BcG5nXkFtZTgwMTk1MzQ2OTE@._V1_.png
 // ==/UserScript==
 
 // Original script https://github.com/ioannisioannou16/netflix-imdb/raw/master/netflix-imdb.user.js
@@ -42,13 +41,12 @@
             animation-name: fade-in;
             animation-duration: 1.5s;
         }
-        .imdb-image {
-            width: 20px;
-            height: 20px;
-            margin: 0 4px 0 0;
-        }
         .imdb-score {
+            background-color: #F5C518;
+            color: #000000;
             font-weight: bold;
+            border-radius: 3px;
+            padding: 2px;
             margin: 3px;
         }
         .imdb-votes {
@@ -151,8 +149,6 @@
 
     };
 
-    const imdbLogo = GM_getResourceURL("imdbIcon");
-
     class RatingNodeBuilder {
 
         constructor(title) {
@@ -161,21 +157,16 @@
 
         _setRatingNode(rating) {
 
-            let iconNode = document.createElement("img");
-            iconNode.classList.add("imdb-image");
-            iconNode.src = imdbLogo;
-
             let scoreNode = document.createElement("span");
             scoreNode.classList.add("imdb-score");
             scoreNode.appendChild(document.createTextNode(rating.score));
 
             let voteNode = document.createElement("span");
             voteNode.classList.add("imdb-votes");
-            voteNode.appendChild(document.createTextNode("(" + rating.votes + " votes)"));
+            voteNode.appendChild(document.createTextNode(rating.votes + " votes"));
 
             this._node.classList.add("imdb-container");
 
-            this._node.appendChild(iconNode);
             this._node.appendChild(scoreNode);
             this._node.appendChild(voteNode);
 
