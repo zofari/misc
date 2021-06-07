@@ -45,9 +45,12 @@
         .imdb-image {
             width: 20px;
             height: 20px;
-            margin: 0 3px 0 0;
+            margin: 0 4px 0 0;
         }
-        .imdb-score,
+        .imdb-score {
+            font-weight: bold;
+            margin: 3px;
+        }
         .imdb-votes {
             margin: 3px;
         }
@@ -150,7 +153,7 @@
 
     const imdbLogo = GM_getResourceURL("imdbIcon");
 
-    class RatingFetcher {
+    class RatingNodeBuilder {
 
         constructor(title) {
             this.title = title;
@@ -170,6 +173,8 @@
             voteNode.classList.add("imdb-votes");
             voteNode.appendChild(document.createTextNode("(" + rating.votes + " votes)"));
 
+            this._node.classList.add("imdb-container");
+
             this._node.appendChild(iconNode);
             this._node.appendChild(scoreNode);
             this._node.appendChild(voteNode);
@@ -177,8 +182,6 @@
             this._node.addEventListener('click', function() {
                 GM_openInTab(rating.url, { active: true, insert: true, setParent: true });
             });
-
-            this._node.classList.add("imdb-container");
         }
 
         _fetchAndSetRatingNode() {
@@ -196,19 +199,19 @@
             });
         }
 
-        get node() {
+        build() {
             this._node = document.createElement("div");
             this._fetchAndSetRatingNode();
             return this._node;
         }
     }
 
-    class RatingRenderer {
+    class View {
         constructor(node) {
             this.node = node;
         }
 
-        // child classes to fill in _getTitle(), _getParentNode()
+        // child classes to fill in _getTitle(), _getParentNode(), _match()
 
         renderImdbRating() {
             let title = this._getTitle();
@@ -219,12 +222,18 @@
                 return;
             }
 
-            let ratingFetcher = new RatingFetcher(title);
-            this._getParentNode().appendChild(ratingFetcher.node);
+            let ratingNodeBuilder = new RatingNodeBuilder(title);
+            this._getParentNode().appendChild(ratingNodeBuilder.build());
+        }
+
+        static matchAndGetInstance(node) {
+            if (this._match(node)) {
+                return new this(node);
+            }
         }
     }
 
-    class RegularCardPreviewRenderer extends RatingRenderer {
+    class RegularCardView extends View {
         _getTitle() {
             let imgNode = this.node.querySelector(".previewModal--boxart");
             return imgNode && imgNode.getAttribute("alt");
@@ -233,9 +242,13 @@
         _getParentNode() {
             return this.node.querySelector(".previewModal--metadatAndControls-container");
         }
+
+        static _match(node) {
+            return node.classList.contains("focus-trap-wrapper");
+        }
     }
 
-    class TallCardPreviewRenderer extends RatingRenderer {
+    class TallCardView extends View {
         _getTitle() {
             let titleNode = this.node.querySelector(".bob-title");
             return titleNode && titleNode.innerHTML;
@@ -244,9 +257,13 @@
         _getParentNode() {
             return this.node.querySelector(".bob-overview");
         }
+
+        static _match(node) {
+            return node.classList.contains("bob-card");
+        }
     }
 
-    class BillboardRenderer extends RatingRenderer {
+    class BillboardView extends View {
         _getTitle() {
             let imgNode = this.node.querySelector(".title-logo");
             return imgNode && imgNode.getAttribute("alt");
@@ -254,6 +271,10 @@
 
         _getParentNode() {
             return this.node.querySelector(".logo-and-text");
+        }
+
+        static _match(node) {
+            return node.querySelector(".billboard-row") != null;
         }
     }
 
@@ -269,30 +290,15 @@
                     return;
                 }
 
-                if (node.classList.contains("focus-trap-wrapper")) {
-                    console.debug("Fetching imdb rating for regular card perview");
+                for (const viewClass of [RegularCardView, TallCardView, BillboardView]) {
+                    let view = viewClass.matchAndGetInstance(node);
+                    if (view) {
+                        console.debug("Fetching imdb rating for " + viewClass.name);
+                        view.renderImdbRating();
 
-                    let renderer = new RegularCardPreviewRenderer(node);
-                    renderer.renderImdbRating();
-                    return;
-                }
-
-                if (node.classList.contains("bob-card")) {
-                    console.debug("Fetching imdb rating for tall card preview");
-
-                    let renderer = new TallCardPreviewRenderer(node);
-                    renderer.renderImdbRating();
-                    return;
-                }
-
-                let billboardNode = node.querySelector(".billboard-row");
-                if (billboardNode) {
-                    console.debug("Fetching imdb rating for billboard");
-
-                    let renderer = new BillboardRenderer(node);
-                    renderer.renderImdbRating();
-                    return;
-                }
+                        return;
+                    }
+                };
             });
         });
     });
@@ -303,12 +309,10 @@
     cache.purgeExpiredEntries();
 
     // Add rating to the billboard when just started
-    let billboardNode = document.querySelector(".billboard-row");
-    if (billboardNode) {
+    let view = BillboardView.matchAndGetInstance(document);
+    if (view) {
         console.debug("Fetching imdb rating for existing billboard node");
-
-        let renderer = new BillboardRenderer(billboardNode);
-        renderer.renderImdbRating();
+        view.renderImdbRating();
     }
 
     // Listen for added nodes for rating insertion.
