@@ -42,15 +42,14 @@
             animation-duration: 1.5s;
         }
         .imdb-score {
+            border-radius: 3px;
             background-color: #F5C518;
             color: #000000;
             font-weight: bold;
-            border-radius: 3px;
             padding: 2px;
-            margin: 3px;
         }
         .imdb-votes {
-            margin: 3px;
+            margin: 6px;
         }
     `);
 
@@ -116,6 +115,8 @@
 
                 onload: function(res) {
 
+                    console.debug("Onload imdb rating for '" + title + "' from url " + url);
+
                     if (res.status != 200) {
                         console.error(url + " failed with status " + res.status);
                         return;
@@ -138,7 +139,7 @@
                         return;
                     }
 
-                    callback({score: response.imdbRating, votes: response.imdbVotes, url: url})
+                    callback({score: response.imdbRating, votes: response.imdbVotes, url: "https://www.imdb.com/title/" + response.imdbID})
                 },
 
                 onerror: function() {
@@ -171,6 +172,10 @@
             this._node.appendChild(voteNode);
 
             this._node.addEventListener('click', function() {
+                // Stop event bubbling to prevent clicking on imdb rating causing
+                // the enlargement of the preview too.
+                event.stopPropagation();
+
                 GM_openInTab(rating.url, { active: true, insert: true, setParent: true });
             });
         }
