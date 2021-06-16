@@ -38,6 +38,8 @@
             color: white;
             height: 23px;
 
+            cursor: pointer;
+
             animation-name: fade-in;
             animation-duration: 1.5s;
         }
@@ -172,10 +174,6 @@
             this._node.appendChild(voteNode);
 
             this._node.addEventListener('click', function() {
-                // Stop event bubbling to prevent clicking on imdb rating causing
-                // the enlargement of the preview too.
-                event.stopPropagation();
-
                 GM_openInTab(rating.url, { active: true, insert: true, setParent: true });
             });
         }
